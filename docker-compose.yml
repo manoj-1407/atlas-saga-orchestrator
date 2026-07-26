@@ -1,0 +1,55 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    ports:
+      - '5432:5432'
+    volumes:
+      - atlas_pg:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U atlas']
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  api:
+    build: .
+    command: npx ts-node apps/api/src/server.ts
+    environment:
+      DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas
+      PORT: 4000
+      NODE_ENV: development
+      LOG_LEVEL: info
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/api/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    command: npx ts-node apps/worker/src/worker.ts
+    environment:
+      DATABASE_URL: postgres://atlas:atlas@postgres:5432/atlas
+      WORKER_ID: worker-1
+      POLL_INTERVAL_MS: 500
+      NODE_ENV: development
+      LOG_LEVEL: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  atlas_pg:
